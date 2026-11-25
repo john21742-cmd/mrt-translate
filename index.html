@@ -796,4 +796,65 @@
         msgId,
         parsed.role,
         parsed.original || textInput || '',
-        parsed
+        parsed.translated,
+        parsed.role === 'passenger' ? parsed.detected_lang : `回覆 ${lastPassengerLang}`
+      );
+    }
+
+    function appendCard(id, role, original, translated, badgeText) {
+      const chatList = document.getElementById('chat-list');
+      const wrap = document.createElement('div');
+      wrap.id = id;
+      chatList.appendChild(wrap);
+      updateCard(id, role, original, translated, badgeText);
+      scrollToBottom(true);
+    }
+
+    function updateCard(id, role, original, translated, badgeText) {
+      const wrap = document.getElementById(id);
+      if (!wrap) return;
+
+      const isPassenger = role === 'passenger';
+      const isError = role === 'error';
+      wrap.className = `flex flex-col ${isPassenger ? 'items-start' : 'items-end'} w-full space-y-1`;
+
+      wrap.innerHTML = `
+        <div class="text-[11px] text-slate-400 px-1 flex items-center gap-1.5">
+          ${isPassenger
+            ? `<span class="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold">${escapeHtml(badgeText)}</span> <span>旅客</span>`
+            : `<span class="bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded font-bold">${escapeHtml(badgeText)}</span> <span>捷運服務</span>`
+          }
+        </div>
+        <div class="max-w-[92%] rounded-2xl px-4 py-3 shadow-md ${
+          isError
+            ? 'bg-red-950/80 border border-red-700 text-red-200'
+            : isPassenger
+              ? 'bg-slate-800 text-slate-100 rounded-tl-none border border-slate-700/60'
+              : 'bg-sky-800/90 text-white rounded-tr-none border border-sky-600/50'
+        }">
+          <div class="text-xs opacity-75 mb-1.5">${escapeHtml(original)}</div>
+          <div class="text-xl font-bold leading-snug ${isPassenger ? 'text-sky-300' : 'text-amber-200'}">
+            ${escapeHtml(translated)}
+          </div>
+        </div>
+      `;
+
+      scrollToBottom(true);
+    }
+
+    function clearChat() {
+      document.getElementById('chat-list').innerHTML = `
+        <div id="empty-hint" class="text-center text-xs text-slate-500 my-auto py-10 space-y-2">
+          <div class="text-4xl text-slate-700"><i class="fa-solid fa-comments"></i></div>
+          <p class="font-medium text-slate-300 text-sm">對話已清除</p>
+          <p class="text-xs text-slate-500">啟動麥克風後即可連續雙向翻譯，最新翻譯永遠停留在最下方</p>
+        </div>
+      `;
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+    }
+  </script>
+</body>
+</html>
