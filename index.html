@@ -79,7 +79,7 @@
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
         <div>
           <label class="block text-xs font-bold text-slate-400 mb-1">1. 服務車站名稱</label>
-          <input type="text" id="input-station" placeholder="例如：台北車站、北門站" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-sky-500 text-slate-100">
+          <input type="text" id="input-station" placeholder="例如：台北車站、西門站" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-sky-500 text-slate-100">
         </div>
         <div>
           <label class="block text-xs font-bold text-slate-400 mb-1">2. Google AI Studio API Key</label>
@@ -99,7 +99,7 @@
     </div>
   </div>
 
-  <!-- 對話大字顯示區（鎖定獨立捲動容器，最新句子永遠固定貼齊最下緣） -->
+  <!-- 對話大字顯示區 -->
   <main id="chat-box" class="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-3">
     <div id="chat-list" class="min-h-full flex flex-col justify-end space-y-3.5">
       <div id="empty-hint" class="text-center text-xs text-slate-500 my-auto py-10 space-y-2">
@@ -145,10 +145,35 @@
     const BASE_SYSTEM_PROMPT = `你是台北捷運（Taipei Metro）專業雙向口譯員。
 請嚴格依據音訊中「實際聽到的語音」進行逐字轉寫與雙向翻譯，輸出純 JSON（不要包含 \`\`\`json 標記）：
 
-【防幻覺與忠實轉寫鐵則】
-1. 嚴禁憑空捏造、猜測或腦補任何音訊裡沒說過的句子！
-2. 如果音訊裡只有環境雜音、呼吸聲、空白、敲擊聲，或聽不出清晰的人類語音，請務必將 role 設為 "ignore"，其餘欄位留空。
-3. 忠實轉寫實際說出的設施與名詞，嚴格區分「樓梯（stairs）」、「電扶梯（escalator）」與「電梯（elevator）」：講「下樓梯／走樓梯」必須轉寫為「下樓梯／走樓梯」並翻譯為 go down the stairs / take the stairs，絕對不可擅自替換成電扶梯（escalator）！
+【防幻覺與聲學精準辨識鐵則】
+1. 嚴禁憑空捏造、猜測或腦補任何音訊裡沒說過的句子！若音訊只有雜音、風聲、遠處廣播或含糊不清的片段，請務必將 role 設為 "ignore"，其餘欄位留空。
+2. 票卡專有名詞精準辨識：
+   - 聽到英文 "EasyCard"（發音接近 easy card / is a card / easy car）搭配詢問價格（如 "How much is an EasyCard?" / "How much does an EasyCard cost?"），必須準確辨識為 "How much is an EasyCard?" 並翻譯為「請問一張悠遊卡多少錢？」，絕對不可誤聽成無關句子！
+   - 台灣人講「悠遊卡」或外國人講 "EasyCard"，必須清楚區分語者：外語問句為 passenger，中文回覆為 staff。
+3. 台北捷運高頻站名拼音精準區分（嚴禁將西門誤聽成中山或芝山）：
+   - Ximen Station（西門站，開頭為 Xi / ㄒㄧ 音）≠ Zhongshan Station（中山站，開頭為 Zhong / ㄓㄨㄥ 音）≠ Zhishan Station（芝山站，開頭為 Zhi / ㄓ 音）。
+   - 常見易混淆站名對照：
+     * 西門站 = Ximen Station
+     * 中山站 = Zhongshan Station
+     * 芝山站 = Zhishan Station
+     * 台北車站 = Taipei Main Station
+     * 北門站 = Beimen Station
+     * 東門站 = Dongmen Station
+     * 淡水站 = Tamsui Station
+     * 象山站 = Xiangshan Station
+     * 市政府站 = Taipei City Hall Station
+     * 忠孝復興站 = Zhongxiao Fuxing Station
+     * 忠孝敦化站 = Zhongxiao Dunhua Station
+     * 國父紀念館站 = Sun Yat-Sen Memorial Hall Station
+     * 松山機場站 = Songshan Airport Station
+     * 板橋站 = Banqiao Station
+     * 劍潭站 = Jiantan Station
+     * 士林站 = Shilin Station
+     * 中正紀念堂站 = Chiang Kai-Shek Memorial Hall Station
+     * 古亭站 = Guting Station
+     * 公館站 = Gongguan Station
+     * 龍山寺站 = Longshan Temple Station
+4. 嚴格區分「樓梯（stairs）」、「電扶梯（escalator）」與「電梯（elevator）」：講「下樓梯／走樓梯」必須譯為 go down the stairs / take the stairs，不可替換成電扶梯（escalator）。
 
 【語言判斷與翻譯規則】
 - 如果說話者講的是「任何外語（英文、日文、韓文、越南文、印尼文、泰文、粵語、西班牙文、法文等）」：
@@ -188,11 +213,11 @@
     const JSON_FOOTER_PROMPT = `\n\n輸出格式（純 JSON）：
 {"role": "passenger 或 staff 或 ignore", "detected_lang": "語言名稱", "original": "原文逐字稿", "translated": "翻譯結果"}`;
 
-    const SILENCE_DURATION_MS = 1350;
-    const MIN_SPEECH_MS = 280;
+    const SILENCE_DURATION_MS = 1450;
+    const MIN_SPEECH_MS = 400;
     const MAX_SEGMENT_MS = 15000;
 
-    let dynamicThreshold = 16;
+    let dynamicThreshold = 18;
     let noiseSamples = [];
 
     let isContinuousActive = false;
@@ -504,7 +529,7 @@
         source.connect(analyser);
 
         noiseSamples = [];
-        dynamicThreshold = 16;
+        dynamicThreshold = 18;
         isContinuousActive = true;
 
         document.getElementById('mic-btn').className = 'relative bg-red-600 active:scale-95 transition-all w-20 h-20 rounded-full flex items-center justify-center shadow-lg shadow-red-900/40 pulse-effect';
@@ -565,6 +590,10 @@
       rec.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
           segmentChunks.push(e.data);
+          // 尚未偵測到人聲時，僅保留最近約 0.6 秒（2個 chunk）作為前導緩衝，避免開口第一個音節被切掉
+          if (!hasDetectedSpeech && segmentChunks.length > 2) {
+            segmentChunks.shift();
+          }
         }
       };
 
@@ -578,9 +607,9 @@
           startNewSegmentRecorder();
         }
 
-        if (hadSpeech && spokeDuration >= MIN_SPEECH_MS && peakVol >= (dynamicThreshold + 4) && chunksCopy.length > 0) {
+        if (hadSpeech && spokeDuration >= MIN_SPEECH_MS && peakVol >= (dynamicThreshold + 6) && chunksCopy.length > 0) {
           const blob = new Blob(chunksCopy, { type: actualMime });
-          if (blob.size >= 800) {
+          if (blob.size >= 1200) {
             const reader = new FileReader();
             reader.onloadend = () => {
               const base64Audio = reader.result.split(',')[1];
@@ -593,7 +622,8 @@
 
       currentRecorder = rec;
       isSegmentRecording = true;
-      rec.start();
+      // 每 300ms 切分一個音訊塊，以實現前導緩衝並完整保留開口首字（如 Ximen）
+      rec.start(300);
     }
 
     function monitorVoiceActivity() {
@@ -613,7 +643,7 @@
         noiseSamples.push(avgVolume);
         if (noiseSamples.length === 25) {
           const baseline = noiseSamples.reduce((a, b) => a + b, 0) / noiseSamples.length;
-          dynamicThreshold = Math.max(14, Math.min(35, baseline + 7));
+          dynamicThreshold = Math.max(16, Math.min(38, baseline + 8));
         }
       }
 
@@ -670,16 +700,17 @@
             .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
             .map(m => m.name.replace(/^models\//, ''))
             .filter(n => /gemini/i.test(n) && !/image|tts|embedding|aqa|robotics/i.test(n));
+          // 優先使用標準 Flash 模型提升英文口音與台灣站名聲學辨識準確率，Lite 作為第二順位備援
           const prioritized = [
-            ...list.filter(n => /lite/i.test(n)),
             ...list.filter(n => /flash/i.test(n) && !/lite/i.test(n)),
+            ...list.filter(n => /lite/i.test(n)),
             ...list.filter(n => /pro/i.test(n))
           ];
           cachedModels = [...new Set(prioritized)];
           if (cachedModels.length > 0) return cachedModels;
         }
       } catch (e) {}
-      return ['gemini-3.8-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+      return ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
     }
 
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -697,7 +728,7 @@
       const userParts = textInput
         ? [{ text: `目前記憶的旅客外語為「${lastPassengerLang}」。請辨識並翻譯：\n${textInput}` }]
         : [
-            { text: `目前記憶的旅客外語為「${lastPassengerLang}」。請忠實聆聽音訊並輸出 JSON 翻譯結果；若音訊無清晰人聲請回傳 ignore，切勿猜測或編造句子，也不可將「樓梯」誤改為「電扶梯」。` },
+            { text: `目前記憶的旅客外語為「${lastPassengerLang}」。請忠實聆聽音訊並輸出 JSON 翻譯結果。請特別注意英文中的 "EasyCard"（悠遊卡）與台北捷運站名拼音（如 Ximen 西門站、Zhongshan 中山站、Zhishan 芝山站），不可誤聽或猜測；若無清晰人聲請回傳 ignore。` },
             { inlineData: { mimeType: mimeType || 'audio/mp4', data: base64Audio } }
           ];
 
