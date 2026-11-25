@@ -120,4 +120,746 @@
     </div>
 
     <div class="max-w-md mx-auto flex items-center justify-center relative">
-      <button onclick="toggleSetupMask()" title="設定車站、金鑰與雲端詞庫" class="absolute left-2 bg-slate-800 text-slate-400 hover:text-white w-11 h-11 rounded-full flex items-center justify-center border border-slate-700/60
+      <button onclick="toggleSetupMask()" title="設定車站、金鑰與雲端詞庫" class="absolute left-2 bg-slate-800 text-slate-400 hover:text-white w-11 h-11 rounded-full flex items-center justify-center border border-slate-700/60">
+        <i class="fa-solid fa-cog"></i>
+      </button>
+
+      <button id="mic-btn" onclick="toggleContinuousMode()" class="relative bg-sky-600 hover:bg-sky-500 active:scale-95 transition-all w-20 h-20 rounded-full flex items-center justify-center shadow-lg shadow-sky-900/40">
+        <i id="mic-icon" class="fa-solid fa-microphone text-2xl text-white"></i>
+      </button>
+
+      <div class="absolute right-3 flex items-end gap-1 h-6">
+        <span id="bar-1" class="w-1.5 h-2 bg-slate-700 rounded-full transition-all duration-75"></span>
+        <span id="bar-2" class="w-1.5 h-2 bg-slate-700 rounded-full transition-all duration-75"></span>
+        <span id="bar-3" class="w-1.5 h-2 bg-slate-700 rounded-full transition-all duration-75"></span>
+      </div>
+    </div>
+    <div id="status-hint" class="text-center text-xs font-semibold text-slate-400 mt-2">
+      點擊麥克風啟動連續雙向翻譯
+    </div>
+  </footer>
+
+  <script>
+    const DEFAULT_GLOSSARY_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT3JNLIE4JXreGtJk-aKu-4Ijmp56s5taAGqNunqqKY4ppjUY3vpBjIDbAbA65HYvYVpjJS0jpbFRiu/pub?gid=0&single=true&output=csv';
+
+    const BASE_SYSTEM_PROMPT = `你是台北捷運（Taipei Metro）專業雙向口譯員。
+請嚴格依據音訊中「實際聽到的語音」進行逐字轉寫與雙向翻譯，輸出純 JSON（不要包含 \`\`\`json 標記）：
+
+【防幻覺與防中英諧音誤判鐵則（最高優先）】
+1. 嚴禁將英文單字音譯成無意義的中文字！
+   - 例如英文「How much」（發音類似「好嘛取 / 好，嘛取」）是英文疑問詞，100% 屬於英文句子！絕對不可轉寫成中文「好，嘛取EasyCard」，也絕對不可判定為 staff！
+   - 只要聽到 "How much EasyCard"、"How much is EasyCard"、"How much is an EasyCard"、"How much for EasyCard" 或類似詢問價格的英文語音，必須轉寫為英文 "How much is an EasyCard?"，role 設為 "passenger"，detected_lang 為 "英文"，translated 為「請問一張悠遊卡多少錢？」。
+2. 嚴禁憑空腦補詞庫中的其他地點！只有當音訊裡「確實清楚說出該地名」時才可套用詞庫；絕對不可把 "How much" 猜測成 "Maokong Gondola"（貓空纜車）！
+3. 若音訊只有雜音、風聲、遠處廣播或含糊不清的片段，請務必將 role 設為 "ignore"，其餘欄位留空。
+4. 台北捷運高頻站名拼音精準區分（嚴禁將西門誤聽成中山或芝山）：
+   - Ximen Station（西門站，開頭為 Xi / ㄒㄧ 音）≠ Zhongshan Station（中山站，開頭為 Zhong / ㄓㄨㄥ 音）≠ Zhishan Station（芝山站，開頭為 Zhi / ㄓ 音）。
+   - 常見易混淆站名對照：
+     * 西門站 = Ximen Station
+     * 中山站 = Zhongshan Station
+     * 芝山站 = Zhishan Station
+     * 台北車站 = Taipei Main Station
+     * 北門站 = Beimen Station
+     * 東門站 = Dongmen Station
+     * 淡水站 = Tamsui Station
+     * 象山站 = Xiangshan Station
+     * 市政府站 = Taipei City Hall Station
+     * 忠孝復興站 = Zhongxiao Fuxing Station
+     * 忠孝敦化站 = Zhongxiao Dunhua Station
+     * 國父紀念館站 = Sun Yat-Sen Memorial Hall Station
+     * 松山機場站 = Songshan Airport Station
+     * 板橋站 = Banqiao Station
+     * 劍潭站 = Jiantan Station
+     * 士林站 = Shilin Station
+     * 中正紀念堂站 = Chiang Kai-Shek Memorial Hall Station
+     * 古亭站 = Guting Station
+     * 公館站 = Gongguan Station
+     * 龍山寺站 = Longshan Temple Station
+5. 嚴格區分「樓梯（stairs）」、「電扶梯（escalator）」與「電梯（elevator）」：講「下樓梯／走樓梯」必須譯為 go down the stairs / take the stairs，不可替換成電扶梯（escalator）。
+
+【語言判斷與翻譯規則】
+- 如果說話者講的是「任何外語（英文、日文、韓文、越南文、印尼文、泰文、粵語、西班牙文、法文等）」：
+  * role 設為 "passenger"
+  * detected_lang 輸出該外語的繁體中文名稱（如：英文、日文、韓文、越南文）
+  * original 輸出該外語的準確逐字稿（不可混入中文字）
+  * translated 翻譯成自然親切的「台灣繁體中文」
+- 如果說話者講的是「完整的繁體中文 / 國語句子」（且不是英文諧音）：
+  * role 設為 "staff"
+  * detected_lang 維持回傳目前的旅客外語
+  * original 輸出站務人員說的台灣繁體中文逐字稿
+  * translated 翻譯成該旅客外語（語氣需禮貌、親切、適合捷運服務人員）
+
+【捷運基礎詞庫標準譯名】
+- 樓梯 / 下樓梯 / 上樓梯 = Stairs / Go down the stairs / Go up the stairs / 階段 / 계단
+- 電扶梯 / 手扶梯 = Escalator / エスカレーター / 에스컬레이터
+- 無障礙電梯 / 電梯 = Elevator / エレベーター / 엘리베이터
+- 第一月台 / 1月台 = Platform 1 / 1番線 / 1번 승강장
+- 第二月台 / 2月台 = Platform 2 / 2番線 / 2번 승강장
+- 第三月台 / 3月台 = Platform 3 / 3番線 / 3번 승강장
+- 第四月台 / 4月台 = Platform 4 / 4番線 / 4번 승강장
+- 地下一樓 / B1 = B1 (Basement 1) / 地下1階 / 지하 1층
+- 地下二樓 / B2 = B2 (Basement 2) / 地下2階 / 지하 2층
+- 悠遊卡 = EasyCard / 悠遊カード / 이지카드
+- 一卡通 = iPASS / 一卡通 / 아이패스
+- 單程票 = Single Journey Token / 片道乗車券 / 일회용 교통카드
+- 加值機 = Ticket Add-Value Machine / チャージ機 / 충전기
+- 旅客詢問處 = Information Counter / 案内所 / 안내소
+- 補票處 = Ticket Adjustment Office / 精算所 / 정산소
+- 博愛座 = Priority Seat / 優先席 / 노약자석
+- 淡水信義線(紅線) = Tamsui-Xinyi Line (Red Line)
+- 板南線(藍線) = Bannan Line (Blue Line)
+- 松山新店線(綠線) = Songshan-Xindian Line (Green Line)
+- 中和新蘆線(橘線) = Zhonghe-Xinlu Line (Orange Line)
+- 文湖線(棕線) = Wenhu Line (Brown Line)`;
+
+    const JSON_FOOTER_PROMPT = `\n\n輸出格式（純 JSON）：
+{"role": "passenger 或 staff 或 ignore", "detected_lang": "語言名稱", "original": "原文逐字稿", "translated": "翻譯結果"}`;
+
+    const SILENCE_DURATION_MS = 850;
+    const MIN_SPEECH_MS = 350;
+    const MAX_SEGMENT_MS = 15000;
+
+    let dynamicThreshold = 18;
+    let noiseSamples = [];
+
+    let isContinuousActive = false;
+    let activeStream = null;
+    let audioContext = null;
+    let analyser = null;
+    let vadRafId = null;
+
+    let currentRecorder = null;
+    let isSegmentRecording = false;
+    let segmentChunks = [];
+    let speechStartTime = 0;
+    let lastVoiceTime = 0;
+    let peakVolumeInSegment = 0;
+    let hasDetectedSpeech = false;
+    let detectedMimeType = 'audio/mp4';
+
+    let lastPassengerLang = '英文';
+    let cachedModels = null;
+    let dynamicGlossaryPrompt = '';
+    let toastTimer = null;
+
+    function scrollToBottom(smooth = true) {
+      const chatBox = document.getElementById('chat-box');
+      const chatList = document.getElementById('chat-list');
+      if (!chatBox) return;
+      requestAnimationFrame(() => {
+        chatBox.scrollTo({
+          top: chatBox.scrollHeight,
+          behavior: smooth ? 'smooth' : 'auto'
+        });
+        if (chatList && chatList.lastElementChild) {
+          chatList.lastElementChild.scrollIntoView({
+            behavior: smooth ? 'smooth' : 'auto',
+            block: 'end'
+          });
+        }
+      });
+    }
+
+    function showToast(msg) {
+      const banner = document.getElementById('toast-banner');
+      const textEl = document.getElementById('toast-text');
+      if (!banner || !textEl) return;
+      textEl.innerText = msg;
+      banner.classList.remove('hidden');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => banner.classList.add('hidden'), 5000);
+    }
+
+    window.addEventListener('load', () => {
+      const station = localStorage.getItem('MRT_STATION') || '台北捷運服務站';
+      const apiKey = localStorage.getItem('GEMINI_DIRECT_KEY') || '';
+      document.getElementById('station-title').innerText = station;
+
+      const cachedRules = localStorage.getItem('MRT_GLOSSARY_RULES') || '';
+      const cachedCount = localStorage.getItem('MRT_GLOSSARY_COUNT') || '0';
+      if (cachedRules && Number(cachedCount) > 0) {
+        dynamicGlossaryPrompt = cachedRules;
+        updateGlossaryBadge(Number(cachedCount));
+      }
+      syncGlossaryCSV(false);
+
+      if (!apiKey) {
+        document.getElementById('settings-overlay').classList.remove('hidden');
+      }
+    });
+
+    function updateGlossaryBadge(count, isSyncing = false) {
+      const badge = document.getElementById('glossary-badge');
+      if (!badge) return;
+      if (isSyncing) {
+        badge.innerHTML = `<i class="fa-solid fa-rotate fa-spin"></i> 同步中...`;
+        return;
+      }
+      if (count > 0) {
+        badge.innerHTML = `<i class="fa-solid fa-book"></i> 雲端詞庫 ${count} 筆`;
+      } else {
+        badge.innerHTML = `<i class="fa-solid fa-book"></i> 內建詞庫`;
+      }
+    }
+
+    function parseCSVRows(csvText) {
+      const cleanText = csvText.replace(/^\uFEFF/, '');
+      const rows = [];
+      let row = [];
+      let field = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < cleanText.length; i++) {
+        const c = cleanText[i];
+        const next = cleanText[i + 1];
+
+        if (inQuotes) {
+          if (c === '"' && next === '"') {
+            field += '"';
+            i++;
+          } else if (c === '"') {
+            inQuotes = false;
+          } else {
+            field += c;
+          }
+        } else {
+          if (c === '"') {
+            inQuotes = true;
+          } else if (c === ',') {
+            row.push(field.trim());
+            field = '';
+          } else if (c === '\r' && next === '\n') {
+            row.push(field.trim());
+            rows.push(row);
+            row = [];
+            field = '';
+            i++;
+          } else if (c === '\n' || c === '\r') {
+            row.push(field.trim());
+            rows.push(row);
+            row = [];
+            field = '';
+          } else {
+            field += c;
+          }
+        }
+      }
+      if (field.length > 0 || row.length > 0) {
+        row.push(field.trim());
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    async function fetchCsvWithFallback(targetUrl) {
+      try {
+        const res = await fetch(targetUrl, { cache: 'no-store' });
+        if (res.ok) {
+          const txt = await res.text();
+          if (txt && !txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+            return txt;
+          }
+        }
+      } catch (e) {}
+
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+      const proxyRes = await fetch(proxyUrl, { cache: 'no-store' });
+      if (!proxyRes.ok) throw new Error(`HTTP ${proxyRes.status}`);
+      return await proxyRes.text();
+    }
+
+    async function syncGlossaryCSV(showNotice = false) {
+      const csvUrl = (localStorage.getItem('MRT_GLOSSARY_CSV_URL') || DEFAULT_GLOSSARY_CSV_URL).trim();
+      const detailEl = document.getElementById('csv-status-detail');
+      if (!csvUrl) {
+        dynamicGlossaryPrompt = '';
+        localStorage.removeItem('MRT_GLOSSARY_RULES');
+        localStorage.removeItem('MRT_GLOSSARY_COUNT');
+        updateGlossaryBadge(0);
+        if (detailEl) detailEl.innerText = '未設定試算表網址，目前使用內建詞庫';
+        if (showNotice) showToast('尚未設定試算表 CSV 網址');
+        return;
+      }
+
+      updateGlossaryBadge(0, true);
+      if (detailEl) detailEl.innerText = '正在從 Google 試算表同步詞庫...';
+
+      try {
+        const separator = csvUrl.includes('?') ? '&' : '?';
+        const fullUrl = `${csvUrl}${separator}_t=${Date.now()}`;
+        const csvText = await fetchCsvWithFallback(fullUrl);
+
+        if (csvText.trim().startsWith('<!DOCTYPE') || csvText.trim().startsWith('<html')) {
+          throw new Error('Google 回傳網頁而非 CSV，請確認試算表「發布到網路」格式已選為「逗號分隔 (.csv)」');
+        }
+
+        const rows = parseCSVRows(csvText);
+        if (rows.length <= 1) {
+          throw new Error(`試算表目前僅有標題列（共 ${rows.length} 列），請從第 2 列起填入詞彙`);
+        }
+
+        const rules = [];
+        for (let i = 1; i < rows.length; i++) {
+          const [zh, en, ja, ko, note] = rows[i];
+          if (!zh) continue;
+          const parts = [];
+          if (en) parts.push(`英文 ${en}`);
+          if (ja) parts.push(`日文 ${ja}`);
+          if (ko) parts.push(`韓文 ${ko}`);
+          let line = `- ${zh} = ${parts.join(' / ')}`;
+          if (note) line += `（備註：${note}）`;
+          rules.push(line);
+        }
+
+        if (rules.length > 0) {
+          dynamicGlossaryPrompt = `\n\n【雲端試算表自訂專屬詞庫（僅在實際聽到該詞彙時適用，不可無故猜測）】\n` + rules.join('\n');
+          localStorage.setItem('MRT_GLOSSARY_RULES', dynamicGlossaryPrompt);
+          localStorage.setItem('MRT_GLOSSARY_COUNT', String(rules.length));
+          updateGlossaryBadge(rules.length);
+          const okMsg = `✅ 雲端詞庫同步成功！共載入 ${rules.length} 筆專有名詞`;
+          if (detailEl) detailEl.innerText = okMsg;
+          if (showNotice) showToast(okMsg);
+        } else {
+          updateGlossaryBadge(0);
+          const emptyMsg = '試算表第 2 列起尚無有效的中文原詞資料';
+          if (detailEl) detailEl.innerText = emptyMsg;
+          if (showNotice) showToast(emptyMsg);
+        }
+      } catch (err) {
+        const fallbackCount = Number(localStorage.getItem('MRT_GLOSSARY_COUNT') || '0');
+        updateGlossaryBadge(fallbackCount);
+        const errMsg = '同步提示：' + err.message;
+        if (detailEl) detailEl.innerText = errMsg;
+        if (showNotice) showToast(errMsg);
+      }
+    }
+
+    function toggleTextInput() {
+      const box = document.getElementById('manual-input-box');
+      box.classList.toggle('hidden');
+      if (!box.classList.contains('hidden')) {
+        document.getElementById('manual-text').focus();
+      }
+      scrollToBottom(false);
+    }
+
+    function sendManualText() {
+      const input = document.getElementById('manual-text');
+      const val = input.value.trim();
+      if (!val) return;
+      if (!localStorage.getItem('GEMINI_DIRECT_KEY')) {
+        toggleSetupMask();
+        return;
+      }
+      input.value = '';
+      processDirectGemini({ textInput: val });
+    }
+
+    function toggleSetupMask() {
+      const overlay = document.getElementById('settings-overlay');
+      if (overlay.classList.contains('hidden')) {
+        document.getElementById('input-station').value = localStorage.getItem('MRT_STATION') || '台北捷運服務站';
+        document.getElementById('input-apikey').value = localStorage.getItem('GEMINI_DIRECT_KEY') || '';
+        document.getElementById('input-csvurl').value = localStorage.getItem('MRT_GLOSSARY_CSV_URL') || DEFAULT_GLOSSARY_CSV_URL;
+        overlay.classList.remove('hidden');
+      } else {
+        overlay.classList.add('hidden');
+      }
+    }
+
+    async function saveSettings() {
+      const station = document.getElementById('input-station').value.trim() || '台北捷運服務站';
+      const apiKey = document.getElementById('input-apikey').value.trim();
+      const csvUrl = document.getElementById('input-csvurl').value.trim();
+      if (!apiKey) return showToast('請貼入 Google AI Studio API Key！');
+
+      localStorage.setItem('MRT_STATION', station);
+      localStorage.setItem('GEMINI_DIRECT_KEY', apiKey);
+      if (csvUrl && csvUrl !== DEFAULT_GLOSSARY_CSV_URL) {
+        localStorage.setItem('MRT_GLOSSARY_CSV_URL', csvUrl);
+      } else {
+        localStorage.removeItem('MRT_GLOSSARY_CSV_URL');
+      }
+      cachedModels = null;
+      document.getElementById('station-title').innerText = station;
+      document.getElementById('settings-overlay').classList.add('hidden');
+
+      await syncGlossaryCSV(true);
+    }
+
+    async function toggleContinuousMode() {
+      if (!localStorage.getItem('GEMINI_DIRECT_KEY')) {
+        toggleSetupMask();
+        return;
+      }
+
+      if (isContinuousActive) {
+        stopContinuousMode();
+      } else {
+        await startContinuousMode();
+      }
+    }
+
+    async function startContinuousMode() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        activeStream = stream;
+
+        if (typeof MediaRecorder.isTypeSupported === 'function') {
+          if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            detectedMimeType = 'audio/mp4';
+          } else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            detectedMimeType = 'audio/webm;codecs=opus';
+          } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+            detectedMimeType = 'audio/webm';
+          }
+        }
+
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        const source = audioContext.createMediaStreamSource(stream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+
+        noiseSamples = [];
+        dynamicThreshold = 18;
+        isContinuousActive = true;
+
+        document.getElementById('mic-btn').className = 'relative bg-red-600 active:scale-95 transition-all w-20 h-20 rounded-full flex items-center justify-center shadow-lg shadow-red-900/40 pulse-effect';
+        document.getElementById('mic-icon').className = 'fa-solid fa-stop text-2xl text-white';
+        document.getElementById('status-hint').innerText = '🟢 連續監聽中... 請直接說話（講完停頓自動翻譯）';
+
+        startNewSegmentRecorder();
+        monitorVoiceActivity();
+      } catch (err) {
+        stopContinuousMode();
+        showToast('無法啟動麥克風：' + err.message + '（請用 Safari 或 Chrome 開啟）');
+      }
+    }
+
+    function stopContinuousMode() {
+      isContinuousActive = false;
+      if (vadRafId) {
+        cancelAnimationFrame(vadRafId);
+        vadRafId = null;
+      }
+
+      if (currentRecorder && isSegmentRecording) {
+        try { currentRecorder.stop(); } catch (e) {}
+      }
+      isSegmentRecording = false;
+      currentRecorder = null;
+
+      if (audioContext) {
+        try { audioContext.close(); } catch (e) {}
+        audioContext = null;
+      }
+
+      if (activeStream) {
+        activeStream.getTracks().forEach(t => t.stop());
+        activeStream = null;
+      }
+
+      updateVolumeBars(0);
+      document.getElementById('mic-btn').className = 'relative bg-sky-600 hover:bg-sky-500 active:scale-95 transition-all w-20 h-20 rounded-full flex items-center justify-center shadow-lg shadow-sky-900/40';
+      document.getElementById('mic-icon').className = 'fa-solid fa-microphone text-2xl text-white';
+      document.getElementById('status-hint').innerText = '點擊麥克風啟動連續雙向翻譯';
+    }
+
+    function startNewSegmentRecorder() {
+      if (!isContinuousActive || !activeStream) return;
+
+      segmentChunks = [];
+      hasDetectedSpeech = false;
+      speechStartTime = 0;
+      lastVoiceTime = 0;
+      peakVolumeInSegment = 0;
+
+      const rec = detectedMimeType
+        ? new MediaRecorder(activeStream, { mimeType: detectedMimeType })
+        : new MediaRecorder(activeStream);
+      const cleanMime = ((rec.mimeType || detectedMimeType || 'audio/mp4').split(';')[0]).trim();
+
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          segmentChunks.push(e.data);
+        }
+      };
+
+      rec.onstop = () => {
+        const hadSpeech = hasDetectedSpeech;
+        const spokeDuration = lastVoiceTime - speechStartTime;
+        const peakVol = peakVolumeInSegment;
+        const chunksCopy = [...segmentChunks];
+
+        if (isContinuousActive) {
+          startNewSegmentRecorder();
+        }
+
+        if (hadSpeech && spokeDuration >= MIN_SPEECH_MS && peakVol >= (dynamicThreshold + 6) && chunksCopy.length > 0) {
+          const blob = new Blob(chunksCopy, { type: cleanMime });
+          if (blob.size >= 1500) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const resultStr = String(reader.result || '');
+              const base64Audio = resultStr.includes(',') ? resultStr.split(',')[1] : '';
+              if (base64Audio && base64Audio.length > 100) {
+                processDirectGemini({ base64Audio, mimeType: cleanMime });
+              }
+            };
+            reader.readAsDataURL(blob);
+          }
+        }
+      };
+
+      currentRecorder = rec;
+      isSegmentRecording = true;
+      rec.start();
+    }
+
+    function monitorVoiceActivity() {
+      if (!isContinuousActive || !analyser) return;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArray);
+
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const avgVolume = sum / dataArray.length;
+      updateVolumeBars(avgVolume);
+
+      if (!hasDetectedSpeech && noiseSamples.length < 25) {
+        noiseSamples.push(avgVolume);
+        if (noiseSamples.length === 25) {
+          const baseline = noiseSamples.reduce((a, b) => a + b, 0) / noiseSamples.length;
+          dynamicThreshold = Math.max(16, Math.min(38, baseline + 8));
+        }
+      }
+
+      const now = Date.now();
+
+      if (avgVolume > dynamicThreshold) {
+        if (!hasDetectedSpeech) {
+          hasDetectedSpeech = true;
+          speechStartTime = now;
+          document.getElementById('status-hint').innerText = '🎙️ 偵測到說話中...';
+        }
+        if (avgVolume > peakVolumeInSegment) {
+          peakVolumeInSegment = avgVolume;
+        }
+        lastVoiceTime = now;
+      }
+
+      if (hasDetectedSpeech && isSegmentRecording && currentRecorder) {
+        const silenceElapsed = now - lastVoiceTime;
+        const totalElapsed = now - speechStartTime;
+
+        if (silenceElapsed >= SILENCE_DURATION_MS || totalElapsed >= MAX_SEGMENT_MS) {
+          isSegmentRecording = false;
+          document.getElementById('status-hint').innerText = '🟢 連續監聽中... 請直接說話（講完停頓自動翻譯）';
+          try {
+            currentRecorder.stop();
+          } catch (e) {}
+        }
+      }
+
+      vadRafId = requestAnimationFrame(monitorVoiceActivity);
+    }
+
+    function updateVolumeBars(vol) {
+      const b1 = document.getElementById('bar-1');
+      const b2 = document.getElementById('bar-2');
+      const b3 = document.getElementById('bar-3');
+      if (!b1) return;
+
+      b1.className = vol > (dynamicThreshold * 0.6) ? 'w-1.5 h-3 bg-emerald-400 rounded-full transition-all duration-75' : 'w-1.5 h-2 bg-slate-700 rounded-full transition-all duration-75';
+      b2.className = vol > dynamicThreshold ? 'w-1.5 h-5 bg-amber-400 rounded-full transition-all duration-75' : 'w-1.5 h-2 bg-slate-700 rounded-full transition-all duration-75';
+      b3.className = vol > (dynamicThreshold + 12) ? 'w-1.5 h-6 bg-red-400 rounded-full transition-all duration-75' : 'w-1.5 h-2 bg-slate-700 rounded-full transition-all duration-75';
+    }
+
+    async function getActiveCandidateModels(apiKey) {
+      if (cachedModels && cachedModels.length > 0) return cachedModels;
+      const defaults = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest'];
+      try {
+        const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+          headers: { 'x-goog-api-key': apiKey }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const available = (data.models || [])
+            .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+            .map(m => m.name.replace(/^models\//, ''))
+            .filter(n => /gemini/i.test(n) && !/2\.5|image|tts|embedding|aqa|robotics/i.test(n));
+          const prioritized = [
+            ...available.filter(n => /3\.5-flash(?!-lite)/i.test(n)),
+            ...available.filter(n => /3\.5-flash-lite/i.test(n)),
+            ...available.filter(n => /flash/i.test(n))
+          ];
+          const merged = [...new Set([...prioritized, ...defaults])];
+          cachedModels = merged;
+          return cachedModels;
+        }
+      } catch (e) {}
+      cachedModels = defaults;
+      return defaults;
+    }
+
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+    async function processDirectGemini({ base64Audio, mimeType, textInput }) {
+      const apiKey = localStorage.getItem('GEMINI_DIRECT_KEY').trim();
+      const emptyHint = document.getElementById('empty-hint');
+      if (emptyHint) emptyHint.remove();
+
+      const msgId = 'msg-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+      appendCard(msgId, 'pending', textInput || '🎙️ 辨識語音中...', '正在翻譯...', '處理中');
+
+      const fullPrompt = BASE_SYSTEM_PROMPT + dynamicGlossaryPrompt + JSON_FOOTER_PROMPT;
+
+      const userParts = textInput
+        ? [{ text: `目前記憶的旅客外語為「${lastPassengerLang}」。請辨識並翻譯：\n${textInput}` }]
+        : [
+            { text: `目前記憶的旅客外語為「${lastPassengerLang}」。請忠實聆聽音訊並輸出 JSON。注意：嚴禁將英文 "How much" 音譯成中文字（如「好嘛取」），英文問句一律視為 passenger；也不可無故猜測詞庫裡的貓空纜車等未提及詞彙。` },
+            { inlineData: { mimeType: mimeType || 'audio/mp4', data: base64Audio } }
+          ];
+
+      const candidateModels = await getActiveCandidateModels(apiKey);
+      let parsed = null;
+      let lastErrMsg = '';
+
+      for (const model of candidateModels.slice(0, 4)) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+          const genConfig = {
+            temperature: 0.0,
+            responseMimeType: 'application/json'
+          };
+          // 3.5 系列使用 thinkingLevel: "minimal" 加速；僅 2.5 系列使用 thinkingBudget: 0
+          if (/3\.5/.test(model)) {
+            genConfig.thinkingConfig = { thinkingLevel: 'minimal' };
+          } else if (/2\.5/.test(model)) {
+            genConfig.thinkingConfig = { thinkingBudget: 0 };
+          }
+
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey
+            },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: fullPrompt }] },
+              contents: [{ role: 'user', parts: userParts }],
+              generationConfig: genConfig
+            })
+          });
+
+          const data = await res.json();
+          if (res.ok && data.candidates && data.candidates[0]) {
+            const raw = data.candidates[0].content.parts[0].text.trim();
+            parsed = JSON.parse(raw);
+            break;
+          } else {
+            lastErrMsg = data.error ? `${data.error.code}: ${data.error.message}` : `HTTP ${res.status}`;
+            if (res.status === 503) {
+              await sleep(400);
+            }
+          }
+        } catch (err) {
+          lastErrMsg = err.message;
+        }
+      }
+
+      if (!parsed) {
+        updateCard(msgId, 'error', textInput || '語音處理失敗', `失敗原因：${lastErrMsg}`, '錯誤');
+        return;
+      }
+
+      if (parsed.role === 'ignore' || !parsed.translated || !parsed.original) {
+        const el = document.getElementById(msgId);
+        if (el) el.remove();
+        scrollToBottom(true);
+        return;
+      }
+
+      if (parsed.role === 'passenger' && parsed.detected_lang) {
+        lastPassengerLang = parsed.detected_lang;
+        document.getElementById('detected-lang-label').innerText = lastPassengerLang;
+      }
+
+      updateCard(
+        msgId,
+        parsed.role,
+        parsed.original || textInput || '',
+        parsed.translated,
+        parsed.role === 'passenger' ? parsed.detected_lang : `回覆 ${lastPassengerLang}`
+      );
+    }
+
+    function appendCard(id, role, original, translated, badgeText) {
+      const chatList = document.getElementById('chat-list');
+      const wrap = document.createElement('div');
+      wrap.id = id;
+      chatList.appendChild(wrap);
+      updateCard(id, role, original, translated, badgeText);
+      scrollToBottom(true);
+    }
+
+    function updateCard(id, role, original, translated, badgeText) {
+      const wrap = document.getElementById(id);
+      if (!wrap) return;
+
+      const isPassenger = role === 'passenger';
+      const isError = role === 'error';
+      wrap.className = `flex flex-col ${isPassenger ? 'items-start' : 'items-end'} w-full space-y-1`;
+
+      wrap.innerHTML = `
+        <div class="text-[11px] text-slate-400 px-1 flex items-center gap-1.5">
+          ${isPassenger
+            ? `<span class="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold">${escapeHtml(badgeText)}</span> <span>旅客</span>`
+            : `<span class="bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded font-bold">${escapeHtml(badgeText)}</span> <span>捷運服務</span>`
+          }
+        </div>
+        <div class="max-w-[92%] rounded-2xl px-4 py-3 shadow-md ${
+          isError
+            ? 'bg-red-950/80 border border-red-700 text-red-200'
+            : isPassenger
+              ? 'bg-slate-800 text-slate-100 rounded-tl-none border border-slate-700/60'
+              : 'bg-sky-800/90 text-white rounded-tr-none border border-sky-600/50'
+        }">
+          <div class="text-xs opacity-75 mb-1.5">${escapeHtml(original)}</div>
+          <div class="text-xl font-bold leading-snug ${isPassenger ? 'text-sky-300' : 'text-amber-200'}">
+            ${escapeHtml(translated)}
+          </div>
+        </div>
+      `;
+
+      scrollToBottom(true);
+    }
+
+    function clearChat() {
+      document.getElementById('chat-list').innerHTML = `
+        <div id="empty-hint" class="text-center text-xs text-slate-500 my-auto py-10 space-y-2">
+          <div class="text-4xl text-slate-700"><i class="fa-solid fa-comments"></i></div>
+          <p class="font-medium text-slate-300 text-sm">對話已清除</p>
+          <p class="text-xs text-slate-500">啟動麥克風後即可連續雙向翻譯，最新翻譯永遠停留在最下方</p>
+        </div>
+      `;
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+    }
+  </script>
+</body>
+</html>
