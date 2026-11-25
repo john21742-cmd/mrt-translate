@@ -147,7 +147,7 @@
 
 【防幻覺與防中英諧音誤判鐵則（最高優先）】
 1. 嚴禁將英文單字音譯成無意義的中文字！
-   - 例如英文「How much」（發音類似「好嘛取 / 好，嘛取」）是英文疑問詞，**100% 屬於英文句子**！絕對不可轉寫成中文「好，嘛取EasyCard」，也絕對不可判定為 staff！
+   - 例如英文「How much」（發音類似「好嘛取 / 好，嘛取」）是英文疑問詞，100% 屬於英文句子！絕對不可轉寫成中文「好，嘛取EasyCard」，也絕對不可判定為 staff！
    - 只要聽到 "How much EasyCard"、"How much is EasyCard"、"How much is an EasyCard"、"How much for EasyCard" 或類似詢問價格的英文語音，必須轉寫為英文 "How much is an EasyCard?"，role 設為 "passenger"，detected_lang 為 "英文"，translated 為「請問一張悠遊卡多少錢？」。
 2. 嚴禁憑空腦補詞庫中的其他地點！只有當音訊裡「確實清楚說出該地名」時才可套用詞庫；絕對不可把 "How much" 猜測成 "Maokong Gondola"（貓空纜車）！
 3. 若音訊只有雜音、風聲、遠處廣播或含糊不清的片段，請務必將 role 設為 "ignore"，其餘欄位留空。
@@ -586,14 +586,11 @@
       const rec = detectedMimeType
         ? new MediaRecorder(activeStream, { mimeType: detectedMimeType })
         : new MediaRecorder(activeStream);
-      const actualMime = rec.mimeType || detectedMimeType || 'audio/mp4';
+      const cleanMime = ((rec.mimeType || detectedMimeType || 'audio/mp4').split(';')[0]).trim();
 
       rec.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
           segmentChunks.push(e.data);
-          if (!hasDetectedSpeech && segmentChunks.length > 2) {
-            segmentChunks.shift();
-          }
         }
       };
 
@@ -608,12 +605,15 @@
         }
 
         if (hadSpeech && spokeDuration >= MIN_SPEECH_MS && peakVol >= (dynamicThreshold + 6) && chunksCopy.length > 0) {
-          const blob = new Blob(chunksCopy, { type: actualMime });
-          if (blob.size >= 1200) {
+          const blob = new Blob(chunksCopy, { type: cleanMime });
+          if (blob.size >= 1500) {
             const reader = new FileReader();
             reader.onloadend = () => {
-              const base64Audio = reader.result.split(',')[1];
-              processDirectGemini({ base64Audio, mimeType: actualMime });
+              const resultStr = String(reader.result || '');
+              const base64Audio = resultStr.includes(',') ? resultStr.split(',')[1] : '';
+              if (base64Audio && base64Audio.length > 100) {
+                processDirectGemini({ base64Audio, mimeType: cleanMime });
+              }
             };
             reader.readAsDataURL(blob);
           }
@@ -622,7 +622,7 @@
 
       currentRecorder = rec;
       isSegmentRecording = true;
-      rec.start(300);
+      rec.start();
     }
 
     function monitorVoiceActivity() {
@@ -796,65 +796,4 @@
         msgId,
         parsed.role,
         parsed.original || textInput || '',
-        parsed.translated,
-        parsed.role === 'passenger' ? parsed.detected_lang : `回覆 ${lastPassengerLang}`
-      );
-    }
-
-    function appendCard(id, role, original, translated, badgeText) {
-      const chatList = document.getElementById('chat-list');
-      const wrap = document.createElement('div');
-      wrap.id = id;
-      chatList.appendChild(wrap);
-      updateCard(id, role, original, translated, badgeText);
-      scrollToBottom(true);
-    }
-
-    function updateCard(id, role, original, translated, badgeText) {
-      const wrap = document.getElementById(id);
-      if (!wrap) return;
-
-      const isPassenger = role === 'passenger';
-      const isError = role === 'error';
-      wrap.className = `flex flex-col ${isPassenger ? 'items-start' : 'items-end'} w-full space-y-1`;
-
-      wrap.innerHTML = `
-        <div class="text-[11px] text-slate-400 px-1 flex items-center gap-1.5">
-          ${isPassenger
-            ? `<span class="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold">${escapeHtml(badgeText)}</span> <span>旅客</span>`
-            : `<span class="bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded font-bold">${escapeHtml(badgeText)}</span> <span>捷運服務</span>`
-          }
-        </div>
-        <div class="max-w-[92%] rounded-2xl px-4 py-3 shadow-md ${
-          isError
-            ? 'bg-red-950/80 border border-red-700 text-red-200'
-            : isPassenger
-              ? 'bg-slate-800 text-slate-100 rounded-tl-none border border-slate-700/60'
-              : 'bg-sky-800/90 text-white rounded-tr-none border border-sky-600/50'
-        }">
-          <div class="text-xs opacity-75 mb-1.5">${escapeHtml(original)}</div>
-          <div class="text-xl font-bold leading-snug ${isPassenger ? 'text-sky-300' : 'text-amber-200'}">
-            ${escapeHtml(translated)}
-          </div>
-        </div>
-      `;
-
-      scrollToBottom(true);
-    }
-
-    function clearChat() {
-      document.getElementById('chat-list').innerHTML = `
-        <div id="empty-hint" class="text-center text-xs text-slate-500 my-auto py-10 space-y-2">
-          <div class="text-4xl text-slate-700"><i class="fa-solid fa-comments"></i></div>
-          <p class="font-medium text-slate-300 text-sm">對話已清除</p>
-          <p class="text-xs text-slate-500">啟動麥克風後即可連續雙向翻譯，最新翻譯永遠停留在最下方</p>
-        </div>
-      `;
-    }
-
-    function escapeHtml(str) {
-      return String(str).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
-    }
-  </script>
-</body>
-</html>
+        parsed
