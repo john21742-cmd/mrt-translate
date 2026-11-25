@@ -244,7 +244,7 @@
     const JSON_FOOTER_PROMPT = `\n\n輸出格式（純 JSON）：
 {"role": "passenger 或 staff 或 ignore", "detected_lang": "語言名稱", "original": "原文逐字稿", "translated": "翻譯結果"}`;
 
-    const SILENCE_DURATION_MS = 1000;
+    const SILENCE_DURATION_MS = 750;
     const MIN_SPEECH_MS = 180;
     const MAX_SEGMENT_MS = 15000;
 
@@ -731,10 +731,10 @@
             .map(m => m.name.replace(/^models\//, ''))
             .filter(n => /gemini/i.test(n) && !/2\.5|image|tts|embedding|aqa|robotics/i.test(n));
           const prioritized = [
-            ...available.filter(n => /3\.5-flash(?!-lite)/i.test(n)),
-            ...available.filter(n => /3\.5-flash-lite/i.test(n)),
-            ...available.filter(n => /flash/i.test(n))
-          ];
+  ...available.filter(n => /3\.5-flash-lite/i.test(n)),
+  ...available.filter(n => /3\.5-flash(?!-lite)/i.test(n)),
+  ...available.filter(n => /flash/i.test(n))
+];
           const merged = [...new Set([...prioritized, ...defaults])];
           cachedModels = merged;
           return cachedModels;
