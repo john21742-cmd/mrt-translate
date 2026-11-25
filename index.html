@@ -147,8 +147,8 @@
 
 【口語乘車指示與站數直譯鐵則（最高優先，嚴禁自行推算站名）】
 1. 嚴禁自行計算捷運路線或替換成具體站名！
-   - 站務員講「坐3站」、「搭3站」、「坐三站」或「第一月台坐3站」時，**必須逐字轉寫並直譯為「搭車經過3個車站」（Take the train for 3 stops / Platform 1, take the train for 3 stops）**！
-   - **絕對禁止**因為目前在台北車站，就自作聰明把「第一月台坐3站」算成「忠孝新生站（Zhongxiao Xinsheng Station）」，也**絕對禁止**把短促的「坐3站」猜成「淡水站（Tamsui Station）」！
+   - 站務員講「坐3站」、「搭3站」、「坐三站」或「第一月台坐3站」時，必須逐字轉寫並直譯為「搭車經過3個車站」（Take the train for 3 stops / Platform 1, take the train for 3 stops）！
+   - 絕對禁止因為目前在台北車站，就把「第一月台坐3站」算成「忠孝新生站」，也絕對禁止把短促的「坐3站」猜成「淡水站」！
    - 常見乘車指示標準直譯對照：
      * 坐1站 / 搭1站 = Take the train for 1 stop / 1駅乗る / 1정거장 가세요
      * 坐2站 / 搭2站 = Take the train for 2 stops / 2駅乗る / 2정거장 가세요
@@ -160,40 +160,15 @@
      * 對面月台轉車 = Transfer at the opposite platform / 向かい側のホームで乗り換え / 맞은편 승강장에서 환승
      * 往淡水方向 = Bound for Tamsui / 淡水方面行き / 단수이 방면
 
-【台北捷運全線高頻與易混淆站名精準對照（僅在明確聽到該站名時使用）】
+【台北捷運高頻與易混淆站名精準對照（其餘站名請優先套用雲端試算表詞庫）】
 2. 嚴格依據實際發音聲母與韻母區分站名，不可張冠李戴：
    - 西門站 = Ximen Station（ㄒㄧ ㄇㄣˊ，不可誤聽為中山或芝山）
    - 中山站 = Zhongshan Station（ㄓㄨㄥ ㄕㄢ）
    - 芝山站 = Zhishan Station（ㄓ ㄕㄢ）
    - 台北車站 = Taipei Main Station
-   - 忠孝新生站 = Zhongxiao Xinsheng Station（ㄓㄨㄥ ㄒㄧㄠˋ ㄒㄧㄣ ㄕㄥ）
-   - 忠孝復興站 = Zhongxiao Fuxing Station（ㄓㄨㄥ ㄒㄧㄠˋ ㄈㄨˋ ㄒㄧㄥ）
-   - 忠孝敦化站 = Zhongxiao Dunhua Station（ㄓㄨㄥ ㄒㄧㄠˋ ㄉㄨㄣ ㄏㄨㄚˋ）
-   - 國父紀念館站 = Sun Yat-Sen Memorial Hall Station
-   - 市政府站 = Taipei City Hall Station
-   - 台北101/世貿站 = Taipei 101/World Trade Center Station
-   - 象山站 = Xiangshan Station
-   - 信義安和站 = Xinyi Anhe Station
-   - 大安站 = Daan Station
-   - 東門站 = Dongmen Station
-   - 北門站 = Beimen Station
-   - 松江南京站 = Songjiang Nanjing Station
-   - 南京復興站 = Nanjing Fuxing Station
-   - 中正紀念堂站 = Chiang Kai-Shek Memorial Hall Station
-   - 古亭站 = Guting Station
-   - 公館站 = Gongguan Station
+   - 忠孝新生站 = Zhongxiao Xinsheng Station
+   - 忠孝復興站 = Zhongxiao Fuxing Station
    - 淡水站 = Tamsui Station（ㄉㄢˋ ㄕㄨㄟˇ，不可將「坐3站」誤聽為淡水站）
-   - 劍潭站 = Jiantan Station
-   - 士林站 = Shilin Station
-   - 北投站 = Beitou Station
-   - 新北投站 = Xinbeitou Station
-   - 板橋站 = Banqiao Station
-   - 龍山寺站 = Longshan Temple Station
-   - 民權西路站 = Minquan West Road Station
-   - 圓山站 = Yuanshan Station
-   - 南京三民站 = Nanjing Sanmin Station
-   - 松山機場站 = Songshan Airport Station
-   - 南港展覽館站 = Taipei Nangang Exhibition Center Station
 
 【票卡、單程票與雙向金額精準辨識規則】
 3. 單程票英文詢問價格（務必判為 passenger，不可回傳 ignore）：
@@ -244,6 +219,7 @@
     const JSON_FOOTER_PROMPT = `\n\n輸出格式（純 JSON）：
 {"role": "passenger 或 staff 或 ignore", "detected_lang": "語言名稱", "original": "原文逐字稿", "translated": "翻譯結果"}`;
 
+    // 縮短靜音等待時間至 750ms，加快斷句與整體反應速度
     const SILENCE_DURATION_MS = 750;
     const MIN_SPEECH_MS = 180;
     const MAX_SEGMENT_MS = 15000;
@@ -719,7 +695,8 @@
 
     async function getActiveCandidateModels(apiKey) {
       if (cachedModels && cachedModels.length > 0) return cachedModels;
-      const defaults = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest'];
+      // 優先使用最輕量快速的 gemini-3.5-flash-lite，並保留標準 flash 作為無縫備援
+      const defaults = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest'];
       try {
         const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
           headers: { 'x-goog-api-key': apiKey }
@@ -731,10 +708,10 @@
             .map(m => m.name.replace(/^models\//, ''))
             .filter(n => /gemini/i.test(n) && !/2\.5|image|tts|embedding|aqa|robotics/i.test(n));
           const prioritized = [
-  ...available.filter(n => /3\.5-flash-lite/i.test(n)),
-  ...available.filter(n => /3\.5-flash(?!-lite)/i.test(n)),
-  ...available.filter(n => /flash/i.test(n))
-];
+            ...available.filter(n => /3\.5-flash-lite/i.test(n)),
+            ...available.filter(n => /3\.5-flash(?!-lite)/i.test(n)),
+            ...available.filter(n => /flash/i.test(n))
+          ];
           const merged = [...new Set([...prioritized, ...defaults])];
           cachedModels = merged;
           return cachedModels;
@@ -767,51 +744,71 @@
       const candidateModels = await getActiveCandidateModels(apiKey);
       let parsed = null;
       let lastErrMsg = '';
+      let lastStatusCode = 0;
 
-      for (const model of candidateModels.slice(0, 4)) {
-        try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-          const genConfig = {
-            temperature: 0.0,
-            responseMimeType: 'application/json'
-          };
-          if (/3\.5/.test(model)) {
-            genConfig.thinkingConfig = { thinkingLevel: 'minimal' };
-          } else if (/2\.5/.test(model)) {
-            genConfig.thinkingConfig = { thinkingBudget: 0 };
-          }
-
-          const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': apiKey
-            },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: fullPrompt }] },
-              contents: [{ role: 'user', parts: userParts }],
-              generationConfig: genConfig
-            })
-          });
-
-          const data = await res.json();
-          if (res.ok && data.candidates && data.candidates[0]) {
-            const raw = data.candidates[0].content.parts[0].text.trim();
-            parsed = JSON.parse(raw);
-            break;
-          } else {
-            lastErrMsg = data.error ? `${data.error.code}: ${data.error.message}` : `HTTP ${res.status}`;
-            if (res.status === 503) {
-              await sleep(400);
+      // 遇 503 伺服器尖峰滿載時，自動輪詢備援模型並進行最多 2 輪靜默重試，不跳紅字報錯
+      for (let round = 1; round <= 2; round++) {
+        for (const model of candidateModels.slice(0, 4)) {
+          try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+            const genConfig = {
+              temperature: 0.0,
+              responseMimeType: 'application/json'
+            };
+            if (/3\.5/.test(model)) {
+              genConfig.thinkingConfig = { thinkingLevel: 'minimal' };
+            } else if (/2\.5/.test(model)) {
+              genConfig.thinkingConfig = { thinkingBudget: 0 };
             }
+
+            const res = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': apiKey
+              },
+              body: JSON.stringify({
+                systemInstruction: { parts: [{ text: fullPrompt }] },
+                contents: [{ role: 'user', parts: userParts }],
+                generationConfig: genConfig
+              })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.candidates && data.candidates[0]) {
+              const raw = data.candidates[0].content.parts[0].text.trim();
+              parsed = JSON.parse(raw);
+              break;
+            } else {
+              lastStatusCode = res.status;
+              lastErrMsg = data.error ? `${data.error.code}: ${data.error.message}` : `HTTP ${res.status}`;
+              if (res.status === 503 || res.status === 429) {
+                updateCard(msgId, 'pending', textInput || '🎙️ 辨識語音中...', '雲端尖峰忙碌，自動重試中...', '重試中');
+                await sleep(500);
+              }
+            }
+          } catch (err) {
+            lastErrMsg = err.message;
           }
-        } catch (err) {
-          lastErrMsg = err.message;
+        }
+        if (parsed) break;
+        if (lastStatusCode === 503 || lastStatusCode === 429) {
+          await sleep(1000);
+        } else {
+          break;
         }
       }
 
       if (!parsed) {
-        updateCard(msgId, 'error', textInput || '語音處理失敗', `失敗原因：${lastErrMsg}`, '錯誤');
+        if (lastStatusCode === 503 || lastStatusCode === 429) {
+          // 尖峰瞬間塞車時自動移除等待卡片並溫和提示，避免畫面跳出刺眼紅框
+          const el = document.getElementById(msgId);
+          if (el) el.remove();
+          showToast('⏳ Google 雲端尖峰繁忙，請再說一次即可');
+          scrollToBottom(true);
+        } else {
+          updateCard(msgId, 'error', textInput || '語音處理失敗', `失敗原因：${lastErrMsg}`, '錯誤');
+        }
         return;
       }
 
