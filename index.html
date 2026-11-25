@@ -214,7 +214,6 @@
     const JSON_FOOTER_PROMPT = `\n\n輸出格式（純 JSON）：
 {"role": "passenger 或 staff 或 ignore", "detected_lang": "語言名稱", "original": "原文逐字稿", "translated": "翻譯結果"}`;
 
-    // 縮短靜音等待時間至 850ms，加快斷句反應速度
     const SILENCE_DURATION_MS = 850;
     const MIN_SPEECH_MS = 350;
     const MAX_SEGMENT_MS = 15000;
@@ -238,6 +237,7 @@
     let detectedMimeType = 'audio/mp4';
 
     let lastPassengerLang = '英文';
+    let cachedModels = null;
     let dynamicGlossaryPrompt = '';
     let toastTimer = null;
 
@@ -479,6 +479,7 @@
       } else {
         localStorage.removeItem('MRT_GLOSSARY_CSV_URL');
       }
+      cachedModels = null;
       document.getElementById('station-title').innerText = station;
       document.getElementById('settings-overlay').classList.add('hidden');
 
@@ -686,6 +687,33 @@
       b3.className = vol > (dynamicThreshold + 12) ? 'w-1.5 h-6 bg-red-400 rounded-full transition-all duration-75' : 'w-1.5 h-2 bg-slate-700 rounded-full transition-all duration-75';
     }
 
+    async function getActiveCandidateModels(apiKey) {
+      if (cachedModels && cachedModels.length > 0) return cachedModels;
+      const defaults = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest'];
+      try {
+        const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+          headers: { 'x-goog-api-key': apiKey }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const available = (data.models || [])
+            .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+            .map(m => m.name.replace(/^models\//, ''))
+            .filter(n => /gemini/i.test(n) && !/2\.5|image|tts|embedding|aqa|robotics/i.test(n));
+          const prioritized = [
+            ...available.filter(n => /3\.5-flash(?!-lite)/i.test(n)),
+            ...available.filter(n => /3\.5-flash-lite/i.test(n)),
+            ...available.filter(n => /flash/i.test(n))
+          ];
+          const merged = [...new Set([...prioritized, ...defaults])];
+          cachedModels = merged;
+          return cachedModels;
+        }
+      } catch (e) {}
+      cachedModels = defaults;
+      return defaults;
+    }
+
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
     async function processDirectGemini({ base64Audio, mimeType, textInput }) {
@@ -705,22 +733,18 @@
             { inlineData: { mimeType: mimeType || 'audio/mp4', data: base64Audio } }
           ];
 
-      // 直接鎖定高速模型清單，省去查詢模型列表的時間
-      const candidateModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
+      const candidateModels = await getActiveCandidateModels(apiKey);
       let parsed = null;
       let lastErrMsg = '';
 
-      for (const model of candidateModels) {
+      for (const model of candidateModels.slice(0, 4)) {
         try {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
           const genConfig = {
             temperature: 0.0,
-            responseMimeType: 'application/json'
+            responseMimeType: 'application/json',
+            thinkingConfig: { thinkingBudget: 0 }
           };
-          // 關閉內部思考鏈（Thinking），大幅縮短回應時間至 1 秒左右
-          if (/2\.5/.test(model)) {
-            genConfig.thinkingConfig = { thinkingBudget: 0 };
-          }
 
           const res = await fetch(url, {
             method: 'POST',
